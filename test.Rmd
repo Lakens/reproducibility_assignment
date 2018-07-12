@@ -1,19 +1,164 @@
 ---
-title: "Reproducibility Assignment"
-author: "daniel lakens"
-date: "12 juli 2018"
+title: "Main Analysis"
+author: "Lakens"
+date: "17 juni 2018"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r global_options, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE, include=TRUE)
+```
+
+#Introduction
+
+Here, we analyze a simple dataset of a Stroop experiment. Students in an introduction to psychology course completed an online Stroop task (http://faculty.washington.edu/chudler/java/ready.html) and named the colors in congruent trials (e.g., the word 'red' written in a red font) and in incongruent trials (e.g., the word 'red' written in a green font). The time they took to name all words was self-reported in seconds (e.g., 21.3 seconds) for both the congruent and incongruent blocks. In this analysis, we are interested in examining whether there is a Stroop effect. 
+
+```{r}
+# #run only once to download the data
+# stroop_data <- read.table("https://raw.githubusercontent.com/Lakens/Stroop/master/stroop.txt", sep = "\t", header = TRUE)
+# 
+# write.table(stroop_data, file = "stroop.csv", quote=F, row.names=F)
+
+stroop_data <- read.csv("stroop.csv", sep = " ", header = TRUE)
+
+```
+
+#Plotting the data
+
+When we plot the rection times, we can visually see that there are no extreme outliers. It is also clear that response times are generally faster for the congruent trials, compared to the incongruent trials. 
+
+```{r, fig.width=4, fig.heigth=4, dpi=150}
+#Draw scatterplot
+
+if(!require(ggplot2)){install.packages('ggplot2')}
+library(ggplot2)
+
+# Main scatterplot
+ggplot(stroop_data, aes(x=Congruent, y=Incongruent)) + 
+  geom_point(alpha = 0.35) +
+  theme_bw(base_size=14) +
+  geom_smooth(method='lm',formula=y~x, color='black') + 
+  coord_fixed() + 
+  ylab("Incongruent")  + xlab("Congruent") +
+  theme(plot.margin= unit(c(0, 0, 0.5, 0.5), "lines"))
+  
+
 ```
 
 ```{r}
-#run only once to download the data
-#stroop_data <- read.table("https://raw.githubusercontent.com/Lakens/Stroop/master/stroop.txt", sep = "\t", header = TRUE)
-#write.table(stroop_data, file = "stroop.csv", quote=F, row.names=F)
+#Perform the dependent t-test. Store results a ttest_result.
 
-stroop_data <- read.csv("stroop.csv", sep = " ", header = TRUE)
+ttest_result <- t.test(stroop_data$Incongruent, 
+                       stroop_data$Congruent, 
+                       alternative = "two.sided", 
+                       paired = TRUE, 
+                       var.equal = TRUE, 
+                       conf.level = 0.95)
+
+#The code below reproduces the ESCI spreadsheet for paired observations by Cumming (2012).
+#store lotal sample size (based on the length of the vector storing congruent RT's)
+N <- length(stroop_data$Congruent)
+#Calculate the differences between congruent and incongruent trials
+diff <- stroop_data$Incongruent - stroop_data$Congruent
+#calculate the pooled standard deviation for the d_av effect size recommended by Cumming. 
+s_av <- sqrt((sd(stroop_data$Congruent)^2 + sd(stroop_data$Incongruent)^2) / 2) 
+#Calculate Cohen's d following Cumming, 2012
+d_av <- mean(diff) / s_av
+#Calculate Hedges'g, or d_unbiased. Note this is approximation of the correction for Hedges'g - ESCI uses a slightly more accurate correction butthe difference is in 5 digits after the decimal.
+d_unb <- (1 - (3 / (4 * (N - 1) - 1))) * d_av 
+
+#Load MBESS backage to calculate non-central t-values
+if(!require(MBESS)){install.packages('MBESS')}
+library(MBESS)
+
+#Calculate the non-central t-values.
+nct_limits <- conf.limits.nct(t.value = ttest_result$statistic, 
+                              df=N-1, 
+                              conf.level = 0.95)
+#Use nct-values to calculate the confidence interval around d_av. 
+ci_l_d_av <- nct_limits$Lower.Limit*sd(diff)/(s_av*sqrt(N))
+ci_u_d_av <- nct_limits$Upper.Limit*sd(diff)/(s_av*sqrt(N))
+
+```
+
+#Results
+
+The mean reaction time (in seconds) of participants in the Congruent condition (*M* = `r round(mean(stroop_data$Congruent), digits = 2)`, *SD* = `r round(sd(stroop_data$Congruent), digits = 2)`)  was lower than the mean of participants in the Incongruent condition (*M* = `r round(mean(stroop_data$Incongruent), digits = 2)`, *SD* = `r round(sd(stroop_data$Incongruent), digits = 2)`, *r* = `r round(cor(stroop_data$Congruent, stroop_data$Incongruent), digits = 2)`). An independent *t*-test indicated we could reject the null-hypothesis, based on an alpha of 0.05, *t*(`r round(ttest_result$parameter, digits=2)`) = `r round(ttest_result$statistic, digits=2)`, *p* `r ifelse(ttest_result$p.value > 0.001," = ", " < ")` `r ifelse(ttest_result$p.value > 0.001, formatC(round(ttest_result$p.value, digits=3), digits=3, format="f"), "0.001")`. As we can expect from the Stroop effect, the standardized effect size is very large, Hedges' *g~av~* = `r round(d_unb, digits=2)`, 95% CI [`r round(ci_l_d_av, digits=2)`;`r round(ci_u_d_av, digits=2)`]. 
+
+
+
+
+```{r, echo=FALSE, fig.width=4, fig.heigth=4, dpi=150}
+#######################################################################
+#######################################################################
+########### Calculate CI for within and between #######################
+################ Scripts from Baguley, 2012 ###########################
+#######################################################################
+#######################################################################
+
+cm.ci <- function(data.frame, conf.level = 0.95, difference = TRUE) {
+  #cousineau-morey within-subject CIs
+  k = ncol(data.frame)
+  if (difference == TRUE) 
+    diff.factor = 2^0.5/2
+  else diff.factor = 1
+  n <- nrow(data.frame)
+  df.stack <- stack(data.frame)
+  index <- rep(1:n, k)
+  p.means <- tapply(df.stack$values, index, mean)
+  norm.df <- data.frame - p.means + (sum(data.frame)/(n * k))
+  t.mat <- matrix(, k, 1)
+  mean.mat <- matrix(, k, 1)
+  for (i in 1:k) t.mat[i, ] <- t.test(norm.df[i])$statistic[1]
+  for (i in 1:k) mean.mat[i, ] <- colMeans(norm.df[i])
+  c.factor <- (k/(k - 1))^0.5
+  moe.mat <- mean.mat/t.mat * qt(1 - (1 - conf.level)/2, n - 1) * c.factor * 
+    diff.factor
+  ci.mat <- matrix(, k, 2)
+  dimnames(ci.mat) <- list(names(data.frame), c("lower", "upper"))
+  for (i in 1:k) {
+    ci.mat[i, 1] <- mean.mat[i] - moe.mat[i]
+    ci.mat[i, 2] <- mean.mat[i] + moe.mat[i]
+  }
+  ci.mat
+}
+
+bs.ci <- function(data.frame, conf.level = 0.95, difference = FALSE) {
+  # between-subject CIs
+  k = ncol(data.frame)
+  n <- nrow(data.frame)
+  df.stack <- stack(data.frame)
+  group.means <- colMeans(data.frame, na.rm = TRUE)
+  if (difference == TRUE) 
+    ci.mat <- (confint(lm(values ~ 0 + ind, df.stack)) - group.means) * 
+    2^0.5/2 + group.means
+  else ci.mat <- confint(lm(values ~ 0 + ind, df.stack))
+  dimnames(ci.mat) <- list(names(data.frame), c("lower", "upper"))
+  ci.mat
+}
+
+#change matrix output from functions to dataframe, add CI from between, add labels and means 
+#order of matrix is flipped around for bs.ci, which returns alphabetically ordered rows
+ci.sum<-as.data.frame(cm.ci(stroop_data[2:3]))
+ci.sum[["congruency"]] <- c("Congruent","Incongruent")
+ci.sum[["reactiontimes"]] <- c(mean(stroop_data$Congruent), mean(stroop_data$Incongruent))
+ci.sum[["lower.between"]] <- as.data.frame(bs.ci(stroop_data[2:3]))$lower
+ci.sum[["upper.between"]] <- as.data.frame(bs.ci(stroop_data[2:3]))$upper
+
+# Convert stroop_data to long format to plot individual points
+if(!require(reshape2)){install.packages('reshape2')}
+library(reshape2)
+stroop_data_long <- melt(stroop_data, id.vars = "PPNR", measure.vars = c("Congruent", "Incongruent"), variable.name = "congruency", value.name = "reactiontimes")
+
+
+#Create plot with means, individual data point and 95% CI (between and within)
+
+ggplot(ci.sum, aes(x=congruency, y=reactiontimes), group=1) +
+  geom_errorbar(width=.1, size=1, aes(ymin=lower, ymax=upper)) +
+  geom_errorbar(width=.2, size=0.5, aes(ymin=lower.between, ymax=upper.between)) +
+  geom_point(size=2) +
+  geom_jitter(data=stroop_data_long, alpha=0.25, width = 0.2) +
+  ylab("Reaction Times")  + xlab("Condition") + theme_bw(base_size=14) + 
+  theme(panel.grid.major.x = element_blank())
 ```
 
