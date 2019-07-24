@@ -30,7 +30,7 @@ stroop_data <- read.csv("stroop.csv", sep = " ", header = TRUE)
 
 # Plotting the data
 
-When we plot the rection times, we can visually see that there are no extreme outliers. It is also clear that response times are generally faster for the congruent trials, compared to the incongruent trials. 
+When we plot the reaction times, we can visually see that there are no extreme outliers. It is also clear that response times are generally faster for the congruent trials, compared to the incongruent trials. 
 
 ```{r, fig.width=4, fig.heigth=4, dpi=150}
 #Draw scatterplot
